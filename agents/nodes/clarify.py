@@ -1,8 +1,11 @@
 import json
+import logging
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage
 from config.settings import settings
 from agents.state import GuideState
+
+logger = logging.getLogger(__name__)
 
 llm = ChatOpenAI(
     model=settings.LLM_MODEL,
@@ -40,9 +43,18 @@ def clarify(state: GuideState) -> dict:
     
     resp = llm.invoke([SystemMessage(content=prompt)] + state["messages"])
     
+    # 容错解析：处理模型输出带```json代码块的情况
+    raw = resp.content.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.split("```")[0].strip()
+    
     try:
-        data = json.loads(resp.content)
+        data = json.loads(raw)
     except json.JSONDecodeError:
+        logger.warning(f"LLM返回非合法JSON: {resp.content[:100]}")
         # LLM 输出不是合法 JSON，追问一次兜底
         return {
             "intent": "ask_more",

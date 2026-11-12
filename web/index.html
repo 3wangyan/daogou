@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能导购助手</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        body { background: #f5f5f5; height: 100vh; display: flex; justify-content: center; align-items: center; }
+        .chat-container { width: 450px; height: 90vh; background: white; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; }
+        .chat-header { background: #6c5ce7; color: white; padding: 16px; font-weight: 500; }
+        .chat-messages { flex: 1; padding: 16px; overflow-y: auto; background: #fafafa; }
+        .message { margin-bottom: 12px; max-width: 80%; padding: 10px 14px; border-radius: 12px; line-height: 1.5; font-size: 14px; white-space: pre-wrap; }
+        .user-msg { background: #6c5ce7; color: white; margin-left: auto; border-bottom-right-radius: 4px; }
+        .bot-msg { background: white; color: #333; border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        .chat-input { display: flex; padding: 12px; background: white; border-top: 1px solid #eee; }
+        .chat-input input { flex: 1; padding: 10px 14px; border: 1px solid #ddd; border-radius: 20px; outline: none; font-size: 14px; }
+        .chat-input button { margin-left: 8px; padding: 0 20px; background: #6c5ce7; color: white; border: none; border-radius: 20px; cursor: pointer; font-size: 14px; }
+        .chat-input button:disabled { background: #ccc; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">🛍️ 智能导购助手（在线）</div>
+        <div class="chat-messages" id="messages">
+            <div class="message bot-msg">您好！我是专属导购助手，告诉我你想买什么（比如"降噪耳机，500块以内"），我帮你推荐合适的商品。</div>
+        </div>
+        <div class="chat-input">
+            <input type="text" id="input" placeholder="说说你的需求..." autocomplete="off">
+            <button id="sendBtn">发送</button>
+        </div>
+    </div>
+    <script>
+        const sessionId = 'guide_' + Date.now();
+        const messagesEl = document.getElementById('messages');
+        const inputEl = document.getElementById('input');
+        const sendBtn = document.getElementById('sendBtn');
+
+        function addMessage(text, isUser) {
+            const div = document.createElement('div');
+            div.className = 'message ' + (isUser ? 'user-msg' : 'bot-msg');
+            div.textContent = text;
+            messagesEl.appendChild(div);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+            return div;
+        }
+
+        async function sendMessage() {
+            const text = inputEl.value.trim();
+            if (!text) return;
+            addMessage(text, true);
+            inputEl.value = '';
+            sendBtn.disabled = true;
+            
+            const botMsg = addMessage('', false);
+            try {
+                const resp = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ message: text, thread_id: sessionId })
+                });
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                while(true) {
+                    const {done, value} = await reader.read();
+                    if(done) break;
+                    const lines = decoder.decode(value).split('\n');
+                    for(const line of lines) {
+                        if(line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            if(data === '[DONE]') break;
+                            try {
+                                const json = JSON.parse(data);
+                                botMsg.textContent += json.content;
+                                messagesEl.scrollTop = messagesEl.scrollHeight;
+                            } catch(e) {}
+                        }
+                    }
+                }
+            } catch(e) {
+                botMsg.textContent = '❌ 网络错误，请检查服务是否启动';
+            } finally {
+                sendBtn.disabled = false;
+                inputEl.focus();
+            }
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+        inputEl.addEventListener('keydown', (e) => { if(e.key === 'Enter') sendMessage(); });
+        inputEl.focus();
+    </script>
+</body>
+</html>
